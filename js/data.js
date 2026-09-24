@@ -1,4 +1,5 @@
-/* 数据层：同源快照 → 配置远程 URL → jsDelivr 镜像 → localStorage 缓存 */
+/* 数据层：同源快照 → 配置远程 URL → jsDelivr 镜像 → localStorage 缓存
+   同源路径一律写相对路径，由页面 <base> 决定实际位置 */
 
 const CONFIG_URL =
   'https://raw.githubusercontent.com/followfollowme/drama/main/config/drama_config.json';
@@ -53,7 +54,7 @@ async function loadJSON(key, candidates, updatedAt) {
 
 function getConfig() {
   return loadJSON('config', [
-    resolveAsset('data/config.json'),
+    'data/config.json',
     mirrorUrl(CONFIG_URL),
     CONFIG_URL,
   ].filter(Boolean));
@@ -61,7 +62,7 @@ function getConfig() {
 
 function getChannel(channel) {
   const candidates = [
-    resolveAsset('data/' + channel.id + '.json'),
+    'data/' + channel.id + '.json',
     mirrorUrl(channel.data_url),
     channel.data_url,
   ].filter(Boolean);
@@ -70,13 +71,7 @@ function getChannel(channel) {
 
 /* 搜索索引为构建期产物，仅同源快照；成功后缓存兜底 */
 function getIndex() {
-  return loadJSON('index', [resolveAsset('data/index.json')]);
+  return loadJSON('index', ['data/index.json']);
 }
 
-/* 拼接站点同源资源；BASE 由构建期注入，开发预览下默认当前目录 */
-function resolveAsset(path) {
-  const base = window.__BASE__ || '';
-  return base ? base.replace(/\/$/, '') + '/' + path : path;
-}
-
-window.Data = { getConfig, getChannel, getIndex, resolveAsset };
+window.Data = { getConfig, getChannel, getIndex };

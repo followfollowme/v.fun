@@ -1,6 +1,5 @@
 /* 页面逻辑：首页（频道+网格）与播放页（HLS/mp4、切集、直播） */
 
-const BASE = window.__BASE__ || '';
 const SSR = window.__SSR__ || null;
 const app = document.getElementById('app');
 
@@ -21,10 +20,7 @@ const state = {
 /* ---------------- 路由 ---------------- */
 
 function routeFromLocation() {
-  let p = location.pathname;
-  const prefix = BASE.replace(/\/$/, '');
-  if (prefix && p.startsWith(prefix)) p = p.slice(prefix.length);
-  const m = p.match(/\/play\/([0-9a-f]+)\/?/);
+  const m = location.pathname.match(/\/play\/([0-9a-f]+)\/?/);
   return m ? { name: 'play', hash: m[1] } : { name: 'home' };
 }
 
@@ -35,8 +31,9 @@ function navigate(url) {
 
 window.addEventListener('popstate', render);
 
+/* 相对当前页面 <base> 解析，pushState 会按文档 base 补全为绝对 URL */
 function playUrl(hash) {
-  return (BASE || '/') + 'play/' + hash + '/';
+  return 'play/' + hash + '/';
 }
 
 /* ---------------- 工具 ---------------- */
