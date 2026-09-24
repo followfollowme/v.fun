@@ -365,7 +365,7 @@ function paintPlay(v, stale, updatedAt) {
     '<div class="player-wrap">' +
       '<video playsinline webkit-playsinline controls preload="metadata"' +
       (v.preview_image ? ' poster="' + esc(v.preview_image) + '"' : '') + '></video>' +
-      '<div class="buffering" id="buffering"><div class="spinner"></div><div class="buf-text">视频加载中，网络较慢请稍候…</div></div>' +
+      '<div class="buffering" id="buffering"><div class="buf-text">视频加载中，网络较慢请稍候…</div></div>' +
       '<div class="player-error" id="player-error">' +
         '<div class="err-title">播放源失效</div>' +
         '<div class="err-msg">该视频源可能已失效或被限制，请稍后重试</div>' +
