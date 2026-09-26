@@ -7,7 +7,6 @@ const state = {
   config: null,
   channels: {}, // id -> { videos, updated_at, stale }
   activeId: null,
-  homeScroll: 0,
   reqSeq: 0,
   player: null, // { hls, video, url }
   q: '',
@@ -19,19 +18,15 @@ const state = {
 
 /* ---------------- 路由 ---------------- */
 
+/* 页面间一律整页导航（<a href> 原生跳转）：广告脚本只在页面加载时执行一次，
+   客户端接管路由会让切页后的广告容器不被填充，PV 也不计数。 */
+
 function routeFromLocation() {
   const m = location.pathname.match(/\/play\/([0-9a-f]+)\/?/);
   return m ? { name: 'play', hash: m[1] } : { name: 'home' };
 }
 
-function navigate(url) {
-  history.pushState(null, '', url);
-  render();
-}
-
-window.addEventListener('popstate', render);
-
-/* 相对当前页面 <base> 解析，pushState 会按文档 base 补全为绝对 URL */
+/* 相对当前页面 <base> 解析 */
 function playUrl(hash) {
   return 'play/' + hash + '/';
 }
@@ -194,6 +189,12 @@ function updateChipsActive() {
   });
 }
 
+function updateTabsActive() {
+  document.querySelectorAll('.tab').forEach((t) => {
+    t.classList.toggle('active', t.dataset.tab === state.activeId);
+  });
+}
+
 function bindSearchInput() {
   const input = document.getElementById('search-input');
   if (!input) return;
@@ -252,11 +253,61 @@ async function loadChannel(channel) {
   return state.channels[channel.id];
 }
 
+/* 首屏入口：SSR 直出时只做渐进增强，不重绘 #app ——
+   广告容器被重绘销毁后，已执行过的广告脚本不会补填新容器。 */
+async function init() {
+  readFilterFromURL();
+  if (SSR && SSR.type === 'play') {
+    setupPlayer(Parser.normalizeVideo(SSR.raw), 0);
+    return;
+  }
+  if (SSR && SSR.type === 'home') {
+    state.config = Parser.normalizeConfig({
+      channels: SSR.channels,
+      updated_at: SSR.updated_at,
+    });
+    state.activeId = SSR.channelId;
+    bindSearchInput();
+    await ensureIndex();
+    fillChips();
+    if (state.q || state.tag) paintGrid();
+    return;
+  }
+  if (routeFromLocation().name === 'play') await renderPlay();
+  else await renderHome();
+}
+
+/* 切频道：只更新 tabs 与网格，不重建 #app（广告位在 #app 内，重建即失效） */
+async function switchChannel(id) {
+  const channel = state.config && state.config.channels.find((c) => c.id === id);
+  if (!channel) return;
+  state.activeId = id;
+  state.q = '';
+  state.tag = '';
+  syncFilterURL();
+  updateTabsActive();
+  const input = document.getElementById('search-input');
+  if (input) input.value = '';
+  const seq = ++state.reqSeq;
+  const data = await loadChannel(channel);
+  if (seq !== state.reqSeq) return;
+  if (!data) {
+    const host = document.getElementById('grid');
+    if (host) {
+      host.className = '';
+      host.innerHTML = emptyBox('该频道数据加载失败，请稍后重试。');
+    }
+    return;
+  }
+  paintGrid();
+}
+
+/* 无 SSR 数据时的客户端渲染兜底（本地预览源码，或 SSR 数据缺失） */
 async function renderHome() {
   destroyPlayer();
   const seq = ++state.reqSeq;
   const config = await ensureConfig();
-  if (routeFromLocation().name !== 'home' || seq !== state.reqSeq) return;
+  if (seq !== state.reqSeq) return;
   if (!config || config.channels.length === 0) {
     app.innerHTML = errorBox('数据加载失败，可能是网络问题。');
     return;
@@ -269,7 +320,7 @@ async function renderHome() {
   const active = config.channels.find((c) => c.id === state.activeId);
   grid.outerHTML = '<div id="grid">' + skeletonHtml() + '</div>';
   const data = await loadChannel(active);
-  if (seq !== state.reqSeq || routeFromLocation().name !== 'home') return;
+  if (seq !== state.reqSeq) return;
   if (!data) {
     app.innerHTML = errorBox('该频道数据加载失败，请稍后重试。');
     return;
@@ -277,12 +328,9 @@ async function renderHome() {
   paintHomeShell(config, data.stale);
   bindSearchInput();
   await ensureIndex();
-  if (seq !== state.reqSeq || routeFromLocation().name !== 'home') return;
+  if (seq !== state.reqSeq) return;
   fillChips();
   paintGrid();
-  // document.getElementById('updated-at').textContent =
-  //   '数据更新于 ' + (fmtDate(data.updated_at) || '未知');
-  window.scrollTo(0, state.homeScroll);
 }
 
 function paintHomeShell(config, stale) {
@@ -326,13 +374,13 @@ async function findVideo(hash) {
   return null;
 }
 
+/* 无 SSR 数据时的客户端渲染兜底 */
 async function renderPlay() {
-  state.homeScroll = window.scrollY;
   const seq = ++state.reqSeq;
   const route = routeFromLocation();
   app.innerHTML = '<div class="player-wrap">' + skeletonHtml() + '</div>';
   const found = await findVideo(route.hash);
-  if (seq !== state.reqSeq || routeFromLocation().name !== 'play') return;
+  if (seq !== state.reqSeq) return;
   if (!found) {
     app.innerHTML = errorBox('没有找到这部剧，可能已下架。');
     return;
@@ -526,12 +574,7 @@ app.addEventListener('click', (e) => {
   const tab = e.target.closest('[data-tab]');
   if (tab) {
     e.preventDefault();
-    state.activeId = tab.dataset.tab;
-    state.homeScroll = 0;
-    state.q = '';
-    state.tag = '';
-    syncFilterURL();
-    renderHome();
+    switchChannel(tab.dataset.tab);
     return;
   }
   const chip = e.target.closest('[data-filter-tag]');
@@ -540,24 +583,12 @@ app.addEventListener('click', (e) => {
     toggleTag(chip.dataset.filterTag);
     return;
   }
-  const card = e.target.closest('[data-play]');
-  if (card) {
-    e.preventDefault();
-    state.homeScroll = window.scrollY;
-    navigate(playUrl(card.dataset.play));
-    return;
-  }
+  // 卡片是带 href 的 <a>：不拦截，交给浏览器整页导航，广告随之重新加载
   const ep = e.target.closest('[data-ep]');
   if (ep && state._playVideo) {
     setupPlayer(state._playVideo, Number(ep.dataset.ep));
   }
 });
-
-async function render() {
-  readFilterFromURL();
-  if (routeFromLocation().name === 'play') await renderPlay();
-  else await renderHome();
-}
 
 if (location.protocol === 'file:') {
   app.innerHTML =
@@ -565,5 +596,5 @@ if (location.protocol === 'file:') {
     '<p style="margin-top:8px;font-size:13px">在 <b>dist</b> 目录下执行：<br>python -m http.server 8000<br>' +
     '然后访问 http://localhost:8000</p></div>';
 } else {
-  render();
+  init();
 }

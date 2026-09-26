@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://followfollowme.github.io/v.fun/sitemap.xml

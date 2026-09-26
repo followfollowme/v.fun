@@ -146,6 +146,12 @@ img { display: block; }
 }
 .btn:active { opacity: 0.85; }
 
+/* ---------- 广告位 ---------- */
+
+.ad-slot { padding: 10px 12px; }
+/* 广告是异步填充的，预留高度避免到达时页面跳动 */
+.ad-slot > div { min-height: 90px; }
+
 /* ---------- 视频网格 ---------- */
 
 .grid {
